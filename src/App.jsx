@@ -424,9 +424,23 @@ export default function App() {
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  // Agent state
+  const [agentMessages, setAgentMessages] = useState([
+    { role: "assistant", content: "Hi Sara! I can make changes to persuadables.com for you. Just tell me what you'd like to do in plain English!" },
+  ]);
+  const [agentInput, setAgentInput] = useState("");
+  const [agentLoading, setAgentLoading] = useState(false);
+  const [agentHistory, setAgentHistory] = useState([]);
+  const [pendingConfirmation, setPendingConfirmation] = useState(null);
+  const agentEndRef = useRef(null);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
+
+  useEffect(() => {
+    agentEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [agentMessages]);
 
   const allTasks = categories.flatMap((c) =>
     c.tasks.map((t) => ({ ...t, categoryLabel: c.label, categoryColor: c.color, categoryIcon: c.icon }))
@@ -512,6 +526,67 @@ export default function App() {
       setChatMessages((prev) => [...prev, { role: "assistant", content: "Oops! Something went wrong. Check your internet and try again." }]);
     }
     setIsLoading(false);
+  };
+
+  const sendAgentMessage = async (text) => {
+    const msg = text || agentInput.trim();
+    if (!msg || agentLoading) return;
+    setAgentInput("");
+    setAgentMessages((prev) => [...prev, { role: "user", content: msg }]);
+    setAgentLoading(true);
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "plan", message: msg, history: agentHistory }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setAgentMessages((prev) => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
+      } else if (data.type === "confirmation") {
+        if (data.text) setAgentMessages((prev) => [...prev, { role: "assistant", content: data.text }]);
+        setPendingConfirmation({ toolName: data.toolName, toolInput: data.toolInput, toolUseId: data.toolUseId, messages: data.messages });
+      } else {
+        setAgentMessages((prev) => [...prev, { role: "assistant", content: data.text }]);
+        // Update history with the exchange
+        setAgentHistory((prev) => [...prev, { role: "user", content: msg }, { role: "assistant", content: data.text }]);
+      }
+    } catch {
+      setAgentMessages((prev) => [...prev, { role: "assistant", content: "Something went wrong connecting to the server." }]);
+    }
+    setAgentLoading(false);
+  };
+
+  const confirmAction = async () => {
+    if (!pendingConfirmation || agentLoading) return;
+    setAgentLoading(true);
+    setAgentMessages((prev) => [...prev, { role: "user", content: "Confirmed!" }]);
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "execute", confirmation: pendingConfirmation }),
+      });
+      const data = await res.json();
+      setPendingConfirmation(null);
+      if (data.error) {
+        setAgentMessages((prev) => [...prev, { role: "assistant", content: `Error: ${data.error}` }]);
+      } else {
+        setAgentMessages((prev) => [...prev, { role: "assistant", content: data.text || "Done!" }]);
+      }
+    } catch {
+      setAgentMessages((prev) => [...prev, { role: "assistant", content: "Something went wrong executing the action." }]);
+    }
+    setAgentLoading(false);
+  };
+
+  const cancelAction = () => {
+    setPendingConfirmation(null);
+    setAgentMessages((prev) => [...prev, { role: "assistant", content: "No problem! The action was cancelled. What else can I help with?" }]);
+  };
+
+  const formatToolName = (name) => {
+    return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
   const TaskView = ({ task, onBack }) => {
@@ -665,6 +740,81 @@ export default function App() {
     </div>
   );
 
+  const agentView = (
+    <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", height: "72vh" }}>
+      <div style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <h2 style={{ margin: 0, color: "#0D1F3C", fontSize: 22 }}>WordPress Agent</h2>
+          <p style={{ margin: "4px 0 0", color: "#718096", fontSize: 14 }}>Describe changes and I'll make them on persuadables.com</p>
+        </div>
+        <span style={{ background: "#FED7D7", color: "#C53030", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 99, textTransform: "uppercase", letterSpacing: "0.5px" }}>Live Site</span>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #E2E8F0", marginBottom: 12 }}>
+        {agentMessages.map((msg, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 12 }}>
+            {msg.role === "assistant" && <div style={{ fontSize: 22, marginRight: 8, flexShrink: 0, marginTop: 4 }}>🔧</div>}
+            <div style={msg.role === "user" ? s.userBubble : s.aiBubble}>
+              {msg.content && msg.content.split("\n").map((line, j) => (
+                <p key={j} style={{ margin: j === 0 ? 0 : "4px 0 0", lineHeight: 1.6 }}>{line}</p>
+              ))}
+            </div>
+          </div>
+        ))}
+        {pendingConfirmation && (
+          <div style={{ background: "#FFFBEB", border: "2px solid #F6E05E", borderRadius: 12, padding: 16, margin: "12px 0" }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#744210", marginBottom: 8 }}>Confirm Action</div>
+            <div style={{ fontSize: 13, color: "#744210", marginBottom: 4 }}>
+              <strong>{formatToolName(pendingConfirmation.toolName)}</strong>
+            </div>
+            <pre style={{ background: "#FEF3C7", borderRadius: 8, padding: 10, fontSize: 12, overflow: "auto", maxHeight: 120, margin: "8px 0", color: "#92400E" }}>
+              {JSON.stringify(pendingConfirmation.toolInput, null, 2)}
+            </pre>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button onClick={cancelAction} disabled={agentLoading}
+                style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", color: "#4A5568" }}>
+                Cancel
+              </button>
+              <button onClick={confirmAction} disabled={agentLoading}
+                style={{ background: "#38A169", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit", opacity: agentLoading ? 0.6 : 1 }}>
+                {agentLoading ? "Executing..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        )}
+        {agentLoading && !pendingConfirmation && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 4px" }}>
+            <div style={{ fontSize: 22, marginRight: 8 }}>🔧</div>
+            <div style={{ ...s.aiBubble, display: "flex", gap: 4, alignItems: "center" }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: "#CBD5E0", display: "inline-block", animation: `pulse 1.2s ${i * 0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        )}
+        <div ref={agentEndRef} />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input value={agentInput} onChange={(e) => setAgentInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sendAgentMessage()}
+          placeholder="Tell me what to change on the website..."
+          style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 14, fontFamily: "inherit", outline: "none" }}
+          disabled={agentLoading || !!pendingConfirmation} />
+        <button onClick={() => sendAgentMessage()} disabled={agentLoading || !agentInput.trim() || !!pendingConfirmation}
+          style={{ background: "#0D1F3C", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: "inherit", opacity: agentLoading || !agentInput.trim() || !!pendingConfirmation ? 0.6 : 1 }}>
+          {agentLoading ? "..." : "Send →"}
+        </button>
+      </div>
+      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {["What pages do I have?", "List team members", "Show recent blog posts", "What post types exist?"].map((q) => (
+          <button key={q} onClick={() => sendAgentMessage(q)} disabled={agentLoading || !!pendingConfirmation}
+            style={{ background: "#EEF2F7", border: "none", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", color: "#4A5568", fontFamily: "inherit", fontWeight: 500, opacity: agentLoading || !!pendingConfirmation ? 0.5 : 1 }}>
+            {q}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const HomeView = () => (
     <div>
       <div style={{ textAlign: "center", marginBottom: 36, padding: "32px 16px", background: "linear-gradient(135deg, #0D1F3C 0%, #1a3a6b 100%)", borderRadius: 20 }}>
@@ -775,10 +925,10 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-            {["home", "chat"].map((sec) => (
+            {["home", "chat", "agent"].map((sec) => (
               <button key={sec} onClick={() => { setActiveSection(sec); setSelectedCategory(null); setSelectedTask(null); }}
                 style={{ background: activeSection === sec ? "rgba(255,255,255,0.12)" : "transparent", border: "none", color: activeSection === sec ? "#fff" : "#A0AEC0", fontSize: 13, fontWeight: 600, padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit" }}>
-                {sec === "home" ? "📚 Guides" : "🤖 AI Chat"}
+                {sec === "home" ? "📚 Guides" : sec === "chat" ? "🤖 AI Chat" : "🔧 Agent"}
               </button>
             ))}
             <a href={`${SITE_URL}/wp-admin`} target="_blank" rel="noreferrer"
@@ -792,7 +942,8 @@ export default function App() {
       {/* Body */}
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 16px 60px" }}>
         {activeSection === "chat" && chatView}
-        {activeSection !== "chat" && (
+        {activeSection === "agent" && agentView}
+        {activeSection !== "chat" && activeSection !== "agent" && (
           <>
             {selectedTask && (
               <TaskView task={selectedTask} onBack={() => setSelectedTask(null)} />
