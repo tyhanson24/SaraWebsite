@@ -600,7 +600,7 @@ export default function App() {
     </div>
   );
 
-  const ChatView = () => (
+  const chatView = (
     <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", flexDirection: "column", height: "72vh" }}>
       <div style={{ marginBottom: 16 }}>
         <h2 style={{ margin: 0, color: "#0D1F3C", fontSize: 22 }}>🤖 AI Website Assistant</h2>
@@ -791,7 +791,7 @@ export default function App() {
 
       {/* Body */}
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 16px 60px" }}>
-        {activeSection === "chat" && <ChatView />}
+        {activeSection === "chat" && chatView}
         {activeSection !== "chat" && (
           <>
             {selectedTask && (
