@@ -628,7 +628,7 @@ export default function App() {
   const HomeView = () => (
     <div>
       <div style={{ textAlign: "center", marginBottom: 36, padding: "32px 16px", background: "linear-gradient(135deg, #0D1F3C 0%, #1a3a6b 100%)", borderRadius: 20 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, color: "#fff", letterSpacing: "-0.5px" }}>What do you need help with?</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, color: "#fff", letterSpacing: "-0.5px" }}>What do you need help with Sara?</h1>
         <p style={{ color: "#A0AEC0", marginTop: 8, marginBottom: 20, fontSize: 15 }}>
           Step-by-step guides for managing <strong style={{ color: "#00A99D" }}>persuadables.com</strong>
         </p>
@@ -731,7 +731,7 @@ export default function App() {
             <div style={{ width: 38, height: 38, borderRadius: 10, background: "#00A99D", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 20, color: "#fff" }}>P</div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 16 }}>Persuadables</div>
-              <div style={{ fontSize: 11, color: "#A0AEC0", letterSpacing: "0.5px", textTransform: "uppercase" }}>Website Helper</div>
+              <div style={{ fontSize: 11, color: "#A0AEC0", letterSpacing: "0.5px", textTransform: "uppercase" }}>Sara's Website Helper</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
