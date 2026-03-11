@@ -419,8 +419,10 @@ export default function App() {
     },
   ]);
   const [chatInput, setChatInput] = useState("");
+  const [chatImage, setChatImage] = useState(null); // { base64, preview, type }
   const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -448,11 +450,25 @@ export default function App() {
     return Math.round((done / steps.length) * 100);
   };
 
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(",")[1];
+      setChatImage({ base64, preview: reader.result, type: file.type });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
   const sendChat = async () => {
-    if (!chatInput.trim() || isLoading) return;
+    if ((!chatInput.trim() && !chatImage) || isLoading) return;
     const userMsg = chatInput.trim();
+    const attachedImage = chatImage;
     setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setChatImage(null);
+    setChatMessages((prev) => [...prev, { role: "user", content: userMsg, image: attachedImage?.preview }]);
     setIsLoading(true);
     try {
       const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
@@ -461,6 +477,19 @@ export default function App() {
         setIsLoading(false);
         return;
       }
+      // Build the user content block (text + optional image)
+      const userContent = [];
+      if (attachedImage) {
+        userContent.push({ type: "image", source: { type: "base64", media_type: attachedImage.type, data: attachedImage.base64 } });
+      }
+      if (userMsg) {
+        userContent.push({ type: "text", text: userMsg });
+      }
+      // Build message history for API
+      const apiMessages = chatMessages
+        .filter((m) => m.role !== "system")
+        .map((m) => ({ role: m.role, content: typeof m.content === "string" ? m.content : m.content }))
+        .concat({ role: "user", content: userContent });
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -472,11 +501,8 @@ export default function App() {
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
-          system: `You are a friendly, expert WordPress website helper for persuadables.com — a market research company in Flint, Michigan. The site uses WordPress with WPBakery page builder. Help the non-technical person managing the site with: editing pages, adding/removing blog posts and team members, managing photos, updating navigation menus, SEO basics, and troubleshooting WordPress issues. Be warm, encouraging, and use simple language. Use numbered steps for instructions. Keep answers concise but complete. Use emojis occasionally. Warn about risky actions like deleting content.`,
-          messages: chatMessages
-            .filter((m) => m.role !== "system")
-            .concat({ role: "user", content: userMsg })
-            .map((m) => ({ role: m.role, content: m.content })),
+          system: `You are a friendly, expert WordPress website helper for persuadables.com — a market research company in Flint, Michigan. The site uses WordPress with WPBakery page builder. Help the non-technical person managing the site with: editing pages, adding/removing blog posts and team members, managing photos, updating navigation menus, SEO basics, and troubleshooting WordPress issues. Be warm, encouraging, and use simple language. Use numbered steps for instructions. Keep answers concise but complete. Use emojis occasionally. Warn about risky actions like deleting content. If the user shares a screenshot, analyze it and give specific advice based on what you see.`,
+          messages: apiMessages,
         }),
       });
       const data = await response.json();
@@ -585,7 +611,8 @@ export default function App() {
           <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 12 }}>
             {msg.role === "assistant" && <div style={{ fontSize: 22, marginRight: 8, flexShrink: 0, marginTop: 4 }}>🤖</div>}
             <div style={msg.role === "user" ? s.userBubble : s.aiBubble}>
-              {msg.content.split("\n").map((line, j) => (
+              {msg.image && <img src={msg.image} alt="Attached" style={{ maxWidth: "100%", borderRadius: 8, marginBottom: 8 }} />}
+              {msg.content && msg.content.split("\n").map((line, j) => (
                 <p key={j} style={{ margin: j === 0 ? 0 : "4px 0 0", lineHeight: 1.6 }}>{line}</p>
               ))}
             </div>
@@ -603,14 +630,27 @@ export default function App() {
         )}
         <div ref={chatEndRef} />
       </div>
+      {chatImage && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 12px", background: "#EEF2F7", borderRadius: 10 }}>
+          <img src={chatImage.preview} alt="Preview" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6 }} />
+          <span style={{ flex: 1, fontSize: 13, color: "#4A5568" }}>Image attached</span>
+          <button onClick={() => setChatImage(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#E53E3E", fontSize: 16, fontWeight: 700 }}>✕</button>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8 }}>
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} style={{ display: "none" }} />
+        <button onClick={() => fileInputRef.current?.click()} disabled={isLoading}
+          style={{ background: "#EEF2F7", border: "1px solid #E2E8F0", borderRadius: 10, padding: "12px 14px", cursor: "pointer", fontSize: 18, flexShrink: 0, opacity: isLoading ? 0.6 : 1 }}
+          title="Attach a screenshot">
+          📷
+        </button>
         <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendChat()}
           placeholder="Ask me anything about your website..."
           style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "1px solid #E2E8F0", fontSize: 14, fontFamily: "inherit", outline: "none" }}
           disabled={isLoading} />
-        <button onClick={sendChat} disabled={isLoading || !chatInput.trim()}
-          style={{ background: "#0D1F3C", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: "inherit", opacity: isLoading || !chatInput.trim() ? 0.6 : 1 }}>
+        <button onClick={sendChat} disabled={isLoading || (!chatInput.trim() && !chatImage)}
+          style={{ background: "#0D1F3C", color: "#fff", border: "none", borderRadius: 10, padding: "12px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: "inherit", opacity: isLoading || (!chatInput.trim() && !chatImage) ? 0.6 : 1 }}>
           {isLoading ? "..." : "Send →"}
         </button>
       </div>
